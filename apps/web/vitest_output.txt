@@ -1,0 +1,12 @@
+﻿
+ RUN  v4.1.11 C:/Users/MEENA/Desktop/LegalAI/apps/web
+
+ Γ¥» src/components/compare.test.tsx (11 tests | 2 failed) 2704ms
+     ├ù successful comparison renders metrics, summary, important changes, and side-by-side clauses 247ms
+       ├ù TEST 7: renders directional risk reason and legal impact on clause cards 1102ms
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 9 passed (11)
+   Start at  10:09:41
+   Duration  3.77s (transform 182ms, setup 174ms, import 214ms, tests 2.70s, environment 566ms)
+

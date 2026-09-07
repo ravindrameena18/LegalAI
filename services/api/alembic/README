@@ -1,0 +1,4 @@
+Alembic migrations for the LegalAI API database.
+
+Run from services/api with the API environment configured:
+  alembic upgrade head
