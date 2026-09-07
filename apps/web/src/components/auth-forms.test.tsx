@@ -200,18 +200,27 @@ describe("Authentication Frontend Components", () => {
     });
   });
 
-  test("getBaseUrl resolves NEXT_PUBLIC_API_BASE_URL and strips trailing slashes", async () => {
+  test("getBaseUrl returns empty string in browser context and resolves origin on server", async () => {
     const { getBaseUrl } = await import("@/lib/api-client");
-    const origEnv = process.env.NEXT_PUBLIC_API_BASE_URL;
 
+    // In browser (jsdom), it should return empty string for same-origin proxy
+    expect(getBaseUrl()).toBe("");
+
+    // Simulate server-side (window undefined)
+    const originalWindow = global.window;
     try {
-      process.env.NEXT_PUBLIC_API_BASE_URL = "https://legalai-api-dqmg.onrender.com/";
+      // @ts-expect-error test-only window mocking
+      delete global.window;
+
+      const origEnv = process.env.API_ORIGIN;
+      process.env.API_ORIGIN = "https://legalai-api-dqmg.onrender.com/";
       expect(getBaseUrl()).toBe("https://legalai-api-dqmg.onrender.com");
 
-      delete process.env.NEXT_PUBLIC_API_BASE_URL;
+      delete process.env.API_ORIGIN;
       expect(getBaseUrl()).toBe("http://localhost:8000");
+      process.env.API_ORIGIN = origEnv;
     } finally {
-      process.env.NEXT_PUBLIC_API_BASE_URL = origEnv;
+      global.window = originalWindow;
     }
   });
 

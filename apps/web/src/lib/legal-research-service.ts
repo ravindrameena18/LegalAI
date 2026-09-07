@@ -1039,7 +1039,10 @@ interface BackendCaseItem {
   precedent_type?: "SUPPORTING" | "CONTRARY" | "DISTINGUISHING";
 }
 
-const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/+$/, "");
+const apiBaseUrl =
+  typeof window !== "undefined"
+    ? ""
+    : (process.env.API_ORIGIN || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000").replace(/\/+$/, "");
 
 export const legalResearchService = {
   /**

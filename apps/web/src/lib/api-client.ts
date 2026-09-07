@@ -1,6 +1,5 @@
 import { filterOutDeletedDocuments, markDocumentDeleted } from "./document-store";
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
 export type HealthResponse = {
   status: string;
@@ -422,12 +421,13 @@ export class ApiError extends Error {
 }
 
 export function getBaseUrl(): string {
-  const url =
-    (typeof window !== "undefined"
-      ? process.env.NEXT_PUBLIC_API_BASE_URL
-      : process.env.API_ORIGIN || process.env.NEXT_PUBLIC_API_BASE_URL) ??
-    apiBaseUrl;
-  return (url || "").replace(/\/+$/, "");
+  if (typeof window !== "undefined") {
+    // In browser context, always use same-origin relative URLs.
+    // All requests hit the Next.js server proxy (/api/...) on the frontend domain.
+    return "";
+  }
+  const url = process.env.API_ORIGIN || process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+  return url.replace(/\/+$/, "");
 }
 
 const TOKEN_STORAGE_KEY = "legalai_token";
@@ -521,7 +521,7 @@ async function parseErrorMessage(response: Response): Promise<string> {
 }
 
 export async function getHealth(): Promise<HealthResponse> {
-  const response = await fetch(`${getBaseUrl()}/health`, {
+  const response = await fetch(`${getBaseUrl()}/api/health`, {
     headers: getRequestHeaders({ Accept: "application/json" }),
     cache: "no-store",
   });
@@ -609,6 +609,7 @@ export async function getCurrentUser(): Promise<User | null> {
     });
 
     if (response.status === 401 || response.status === 403) {
+      setAuthToken(null);
       return null;
     }
 

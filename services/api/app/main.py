@@ -71,6 +71,7 @@ async def security_headers(request: Request, call_next):
 
 
 app.include_router(router)
+app.include_router(router, prefix="/api")
 app.include_router(auth_router, prefix="/api/auth", tags=["auth"])
 app.include_router(auth_router, prefix="/auth", tags=["auth"], include_in_schema=False)
 app.include_router(documents_router, prefix="/api/documents", tags=["documents"])

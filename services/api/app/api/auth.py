@@ -29,7 +29,7 @@ def _set_auth_cookie(response: Response, token: str) -> None:
         key=SESSION_COOKIE,
         value=token,
         httponly=True,
-        samesite="none" if is_production else "lax",
+        samesite="lax",
         secure=is_production,
         max_age=8 * 3600,
         path="/",
@@ -41,7 +41,7 @@ def _clear_auth_cookie(response: Response) -> None:
     response.delete_cookie(
         key=SESSION_COOKIE,
         path="/",
-        samesite="none" if is_production else "lax",
+        samesite="lax",
         secure=is_production,
     )
 

@@ -463,6 +463,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                     </span>
                   </button>
                 </div>
+              ) : isLoading ? (
+                <div className="profile" style={{ opacity: 0.7 }}>
+                  <span className="avatar">…</span>
+                  <span className="profile-copy">
+                    {isHindi ? "सत्र सत्यापित हो रहा है..." : "Verifying session..."}
+                  </span>
+                </div>
               ) : (
                 <div className="profile">
                   <span className="avatar">G</span>
@@ -628,6 +635,14 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <span className="avatar avatar-collapsed">{getInitials(user.name)}</span>
                   </button>
                 </div>
+              ) : isLoading ? (
+                <div
+                  className="collapsed-avatar-btn"
+                  title={isHindi ? "सत्र सत्यापित हो रहा है..." : "Verifying session..."}
+                  style={{ opacity: 0.6 }}
+                >
+                  <span className="avatar avatar-collapsed">…</span>
+                </div>
               ) : (
                 <Link
                   href="/login"
@@ -678,6 +693,10 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="role-meta-badge">
                 <strong>{user.role}</strong>
               </span>
+            ) : isLoading ? (
+              <span className="role-meta-badge" style={{ opacity: 0.7 }}>
+                <strong>{isHindi ? "सत्यापित हो रहा है..." : "Verifying..."}</strong>
+              </span>
             ) : (
               <span>Session required</span>
             )}
@@ -686,7 +705,37 @@ export function AppShell({ children }: { children: ReactNode }) {
         </header>
 
         {/* Page Content */}
-        <main className="main-content">{children}</main>
+        <main className="main-content">
+          {isLoading && !user && !["/login", "/register"].includes(pathname || "") ? (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                minHeight: "50vh",
+                gap: "14px",
+                color: "var(--foreground-muted, #888)",
+              }}
+            >
+              <div
+                style={{
+                  width: "28px",
+                  height: "28px",
+                  border: "2.5px solid rgba(120, 120, 120, 0.2)",
+                  borderTopColor: "var(--accent-color, #2563eb)",
+                  borderRadius: "50%",
+                  animation: "spin 0.8s linear infinite",
+                }}
+              />
+              <p style={{ fontSize: "13px", fontWeight: 500 }}>
+                {isHindi ? "सत्र सत्यापित किया जा रहा है..." : "Verifying workspace session..."}
+              </p>
+            </div>
+          ) : (
+            children
+          )}
+        </main>
       </div>
 
       {/* ChatGPT-Style Centered Elevated Settings Modal */}

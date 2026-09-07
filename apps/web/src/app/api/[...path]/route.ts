@@ -3,7 +3,11 @@ import { NextRequest, NextResponse } from "next/server";
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
 
-const API_ORIGIN = process.env.API_ORIGIN ?? process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const API_ORIGIN = (
+  process.env.API_ORIGIN ??
+  process.env.NEXT_PUBLIC_API_BASE_URL ??
+  "http://localhost:8000"
+).replace(/\/+$/, "");
 
 async function proxyRequest(
   request: NextRequest,
@@ -33,12 +37,32 @@ async function proxyRequest(
 
     clearTimeout(timeoutId);
 
-    const resHeaders = new Headers(backendResponse.headers);
-    return new NextResponse(backendResponse.body, {
+    const resHeaders = new Headers();
+    backendResponse.headers.forEach((value, key) => {
+      if (key.toLowerCase() !== "set-cookie") {
+        resHeaders.set(key, value);
+      }
+    });
+
+    const response = new NextResponse(backendResponse.body, {
       status: backendResponse.status,
       statusText: backendResponse.statusText,
       headers: resHeaders,
     });
+
+    // Relay Set-Cookie headers individually to preserve cookie attributes and multi-cookie responses
+    const setCookies =
+      typeof backendResponse.headers.getSetCookie === "function"
+        ? backendResponse.headers.getSetCookie()
+        : backendResponse.headers.get("set-cookie")
+          ? [backendResponse.headers.get("set-cookie")!]
+          : [];
+
+    for (const cookie of setCookies) {
+      response.headers.append("set-cookie", cookie);
+    }
+
+    return response;
   } catch (err: unknown) {
     clearTimeout(timeoutId);
     console.error("Next.js proxy error forwarding to", targetUrl.toString(), err);
