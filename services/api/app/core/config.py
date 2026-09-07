@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     app_env: str = "development"
     api_origin: str = "http://localhost:8000"
     web_origin: str = "http://localhost:3000"
-    cors_origins: str = "http://localhost:3000"
+    cors_origins: str = "http://localhost:3000,https://legalai-jyad.onrender.com"
     database_url: str = "postgresql+psycopg://legalai:change-me@localhost:5432/legalai"
     redis_url: str = "redis://localhost:6379/0"
     storage_provider: str = "unconfigured"
@@ -47,7 +47,12 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origins(self) -> list[str]:
-        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
+        origins = [origin.strip().rstrip("/") for origin in self.cors_origins.split(",") if origin.strip()]
+        if self.web_origin:
+            cleaned_web = self.web_origin.strip().rstrip("/")
+            if cleaned_web and cleaned_web not in origins:
+                origins.append(cleaned_web)
+        return origins
 
 
 @lru_cache

@@ -199,4 +199,40 @@ describe("Authentication Frontend Components", () => {
       expect(mockPush).toHaveBeenCalledWith("/login");
     });
   });
+
+  test("getBaseUrl resolves NEXT_PUBLIC_API_BASE_URL and strips trailing slashes", async () => {
+    const { getBaseUrl } = await import("@/lib/api-client");
+    const origEnv = process.env.NEXT_PUBLIC_API_BASE_URL;
+
+    try {
+      process.env.NEXT_PUBLIC_API_BASE_URL = "https://legalai-api-dqmg.onrender.com/";
+      expect(getBaseUrl()).toBe("https://legalai-api-dqmg.onrender.com");
+
+      delete process.env.NEXT_PUBLIC_API_BASE_URL;
+      expect(getBaseUrl()).toBe("http://localhost:8000");
+    } finally {
+      process.env.NEXT_PUBLIC_API_BASE_URL = origEnv;
+    }
+  });
+
+  test("setAuthToken manages localStorage, legalai_session cookie, and getRequestHeaders", async () => {
+    const { getAuthToken, setAuthToken, getRequestHeaders } = await import("@/lib/api-client");
+
+    setAuthToken("test-jwt-token-123");
+    expect(getAuthToken()).toBe("test-jwt-token-123");
+    expect(localStorage.getItem("legalai_token")).toBe("test-jwt-token-123");
+    expect(document.cookie).toContain("legalai_session=test-jwt-token-123");
+
+    const headers = getRequestHeaders({ Accept: "application/json" });
+    expect(headers.get("Authorization")).toBe("Bearer test-jwt-token-123");
+    expect(headers.get("Accept")).toBe("application/json");
+
+    setAuthToken(null);
+    expect(getAuthToken()).toBeNull();
+    expect(localStorage.getItem("legalai_token")).toBeNull();
+
+    const headersAfterClear = getRequestHeaders();
+    expect(headersAfterClear.get("Authorization")).toBeNull();
+  });
 });
+

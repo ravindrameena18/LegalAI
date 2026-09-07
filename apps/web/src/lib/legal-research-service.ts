@@ -1039,7 +1039,7 @@ interface BackendCaseItem {
   precedent_type?: "SUPPORTING" | "CONTRARY" | "DISTINGUISHING";
 }
 
-const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
+const apiBaseUrl = (process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000").replace(/\/+$/, "");
 
 export const legalResearchService = {
   /**
@@ -1978,7 +1978,7 @@ export const legalResearchService = {
     }
 
     try {
-      const resp = await fetch("/api/research/verify-citation", {
+      const resp = await fetch(`${apiBaseUrl}/api/research/verify-citation`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ citation: raw }),

@@ -421,12 +421,60 @@ export class ApiError extends Error {
   }
 }
 
-function getBaseUrl(): string {
-  if (typeof window !== "undefined") {
-    // In the browser, prefer same-origin proxy to ensure cookie isolation
-    return "";
+export function getBaseUrl(): string {
+  const url =
+    (typeof window !== "undefined"
+      ? process.env.NEXT_PUBLIC_API_BASE_URL
+      : process.env.API_ORIGIN || process.env.NEXT_PUBLIC_API_BASE_URL) ??
+    apiBaseUrl;
+  return (url || "").replace(/\/+$/, "");
+}
+
+const TOKEN_STORAGE_KEY = "legalai_token";
+const SESSION_COOKIE_NAME = "legalai_session";
+
+export function getAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const stored = localStorage.getItem(TOKEN_STORAGE_KEY);
+    if (stored) return stored;
+  } catch {}
+  if (typeof document !== "undefined") {
+    const match = document.cookie.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE_NAME}=([^;]*)`));
+    if (match && match[1]) {
+      return decodeURIComponent(match[1]);
+    }
   }
-  return process.env.API_ORIGIN ?? apiBaseUrl;
+  return null;
+}
+
+export function setAuthToken(token: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (token) {
+      localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    } else {
+      localStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
+  } catch {}
+
+  if (typeof document !== "undefined") {
+    const isHttps = window.location.protocol === "https:";
+    if (token) {
+      document.cookie = `${SESSION_COOKIE_NAME}=${encodeURIComponent(token)}; path=/; max-age=28800; SameSite=Lax${isHttps ? "; Secure" : ""}`;
+    } else {
+      document.cookie = `${SESSION_COOKIE_NAME}=; path=/; max-age=0; SameSite=Lax${isHttps ? "; Secure" : ""}`;
+    }
+  }
+}
+
+export function getRequestHeaders(additionalHeaders?: HeadersInit): Headers {
+  const headers = new Headers(additionalHeaders);
+  const token = getAuthToken();
+  if (token && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+  return headers;
 }
 
 async function parseErrorMessage(response: Response): Promise<string> {
@@ -474,7 +522,7 @@ async function parseErrorMessage(response: Response): Promise<string> {
 
 export async function getHealth(): Promise<HealthResponse> {
   const response = await fetch(`${getBaseUrl()}/health`, {
-    headers: { Accept: "application/json" },
+    headers: getRequestHeaders({ Accept: "application/json" }),
     cache: "no-store",
   });
   if (!response.ok) {
@@ -487,10 +535,10 @@ export async function getHealth(): Promise<HealthResponse> {
 export async function registerUser(payload: RegisterPayload): Promise<AuthResponse> {
   const response = await fetch(`${getBaseUrl()}/api/auth/register`, {
     method: "POST",
-    headers: {
+    headers: getRequestHeaders({
       "Content-Type": "application/json",
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     body: JSON.stringify(payload),
   });
@@ -500,16 +548,20 @@ export async function registerUser(payload: RegisterPayload): Promise<AuthRespon
     throw new ApiError(response.status, detail);
   }
 
-  return response.json() as Promise<AuthResponse>;
+  const data = (await response.json()) as AuthResponse;
+  if (data?.token) {
+    setAuthToken(data.token);
+  }
+  return data;
 }
 
 export async function loginUser(payload: LoginPayload): Promise<AuthResponse> {
   const response = await fetch(`${getBaseUrl()}/api/auth/login`, {
     method: "POST",
-    headers: {
+    headers: getRequestHeaders({
       "Content-Type": "application/json",
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     body: JSON.stringify(payload),
   });
@@ -519,21 +571,29 @@ export async function loginUser(payload: LoginPayload): Promise<AuthResponse> {
     throw new ApiError(response.status, detail);
   }
 
-  return response.json() as Promise<AuthResponse>;
+  const data = (await response.json()) as AuthResponse;
+  if (data?.token) {
+    setAuthToken(data.token);
+  }
+  return data;
 }
 
 export async function logoutUser(): Promise<void> {
-  const response = await fetch(`${getBaseUrl()}/api/auth/logout`, {
-    method: "POST",
-    headers: {
-      Accept: "application/json",
-    },
-    credentials: "include",
-  });
+  try {
+    const response = await fetch(`${getBaseUrl()}/api/auth/logout`, {
+      method: "POST",
+      headers: getRequestHeaders({
+        Accept: "application/json",
+      }),
+      credentials: "include",
+    });
 
-  if (!response.ok) {
-    const detail = await parseErrorMessage(response);
-    throw new ApiError(response.status, detail);
+    if (!response.ok) {
+      const detail = await parseErrorMessage(response);
+      throw new ApiError(response.status, detail);
+    }
+  } finally {
+    setAuthToken(null);
   }
 }
 
@@ -541,9 +601,9 @@ export async function getCurrentUser(): Promise<User | null> {
   try {
     const response = await fetch(`${getBaseUrl()}/api/auth/me`, {
       method: "GET",
-      headers: {
+      headers: getRequestHeaders({
         Accept: "application/json",
-      },
+      }),
       credentials: "include",
       cache: "no-store",
     });
@@ -571,9 +631,9 @@ export async function uploadDocument(file: File, password?: string): Promise<Doc
 
   const response = await fetch(`${getBaseUrl()}/api/documents/upload`, {
     method: "POST",
-    headers: {
+    headers: getRequestHeaders({
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     body: formData,
   });
@@ -589,10 +649,10 @@ export async function uploadDocument(file: File, password?: string): Promise<Doc
 export async function unlockDocument(id: string, password: string): Promise<DocumentDetail> {
   const response = await fetch(`${getBaseUrl()}/api/documents/${id}/unlock`, {
     method: "POST",
-    headers: {
+    headers: getRequestHeaders({
       "Content-Type": "application/json",
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     body: JSON.stringify({ password }),
   });
@@ -618,9 +678,9 @@ export async function listDocuments(params?: {
   const url = `${getBaseUrl()}/api/documents${query.toString() ? `?${query.toString()}` : ""}`;
   const response = await fetch(url, {
     method: "GET",
-    headers: {
+    headers: getRequestHeaders({
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     cache: "no-store",
   });
@@ -637,9 +697,9 @@ export async function listDocuments(params?: {
 export async function getDocument(id: string): Promise<DocumentDetail> {
   const response = await fetch(`${getBaseUrl()}/api/documents/${id}`, {
     method: "GET",
-    headers: {
+    headers: getRequestHeaders({
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     cache: "no-store",
   });
@@ -658,9 +718,9 @@ export async function deleteDocument(id: string): Promise<{ message: string }> {
 
   const response = await fetch(`${getBaseUrl()}/api/documents/${id}`, {
     method: "DELETE",
-    headers: {
+    headers: getRequestHeaders({
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
   });
 
@@ -693,9 +753,9 @@ export async function triggerDocumentAnalysis(
 
     response = await fetch(url, {
       method: "POST",
-      headers: {
+      headers: getRequestHeaders({
         Accept: "application/json",
-      },
+      }),
       credentials: "include",
       signal: combinedSignal,
     });
@@ -718,9 +778,9 @@ export async function triggerDocumentAnalysis(
 export async function getDocumentAnalysis(documentId: string): Promise<AnalysisDetail> {
   const response = await fetch(`${getBaseUrl()}/api/documents/${documentId}/analysis`, {
     method: "GET",
-    headers: {
+    headers: getRequestHeaders({
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     cache: "no-store",
   });
@@ -737,9 +797,9 @@ export async function getDocumentAnalysis(documentId: string): Promise<AnalysisD
 export async function getAnalysis(analysisId: string): Promise<AnalysisDetail> {
   const response = await fetch(`${getBaseUrl()}/api/analyses/${analysisId}`, {
     method: "GET",
-    headers: {
+    headers: getRequestHeaders({
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     cache: "no-store",
   });
@@ -756,9 +816,9 @@ export async function getAnalysis(analysisId: string): Promise<AnalysisDetail> {
 export async function listAnalyses(): Promise<AnalysisItem[]> {
   const response = await fetch(`${getBaseUrl()}/api/analyses`, {
     method: "GET",
-    headers: {
+    headers: getRequestHeaders({
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     cache: "no-store",
   });
@@ -774,9 +834,9 @@ export async function listAnalyses(): Promise<AnalysisItem[]> {
 export async function getWorkspaceStats(): Promise<WorkspaceStats> {
   const response = await fetch(`${getBaseUrl()}/api/stats`, {
     method: "GET",
-    headers: {
+    headers: getRequestHeaders({
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     cache: "no-store",
   });
@@ -792,9 +852,9 @@ export async function getWorkspaceStats(): Promise<WorkspaceStats> {
 export async function getAIProviderStatus(): Promise<ProviderStatus> {
   const response = await fetch(`${getBaseUrl()}/api/analysis/provider-status`, {
     method: "GET",
-    headers: {
+    headers: getRequestHeaders({
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     cache: "no-store",
   });
@@ -834,9 +894,9 @@ export interface ReportItem {
 export async function listReports(): Promise<ReportItem[]> {
   const response = await fetch(`${getBaseUrl()}/api/reports`, {
     method: "GET",
-    headers: {
+    headers: getRequestHeaders({
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     cache: "no-store",
   });
@@ -852,10 +912,10 @@ export async function listReports(): Promise<ReportItem[]> {
 export async function generateReport(documentId: string, force: boolean = false): Promise<ReportItem> {
   const response = await fetch(`${getBaseUrl()}/api/reports/generate`, {
     method: "POST",
-    headers: {
+    headers: getRequestHeaders({
       "Content-Type": "application/json",
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     body: JSON.stringify({ document_id: documentId, force }),
   });
@@ -871,9 +931,9 @@ export async function generateReport(documentId: string, force: boolean = false)
 export async function getReport(reportId: string): Promise<ReportItem> {
   const response = await fetch(`${getBaseUrl()}/api/reports/${encodeURIComponent(reportId)}`, {
     method: "GET",
-    headers: {
+    headers: getRequestHeaders({
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     cache: "no-store",
   });
@@ -897,9 +957,9 @@ export async function deleteChatSessionApi(sessionId: string): Promise<ChatDelet
   try {
     const response = await fetch(`${getBaseUrl()}/api/chats/${encodeURIComponent(sessionId)}`, {
       method: "DELETE",
-      headers: {
+      headers: getRequestHeaders({
         Accept: "application/json",
-      },
+      }),
       credentials: "include",
     });
 
@@ -997,10 +1057,10 @@ export interface ComparisonCreateRequest {
 export async function createComparison(payload: ComparisonCreateRequest): Promise<ComparisonResponse> {
   const response = await fetch(`${getBaseUrl()}/api/compare`, {
     method: "POST",
-    headers: {
+    headers: getRequestHeaders({
       "Content-Type": "application/json",
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     body: JSON.stringify(payload),
   });
@@ -1015,9 +1075,9 @@ export async function createComparison(payload: ComparisonCreateRequest): Promis
 
 export async function getComparison(id: string): Promise<ComparisonResponse> {
   const response = await fetch(`${getBaseUrl()}/api/compare/${encodeURIComponent(id)}`, {
-    headers: {
+    headers: getRequestHeaders({
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
   });
 
@@ -1031,9 +1091,9 @@ export async function getComparison(id: string): Promise<ComparisonResponse> {
 
 export async function listComparisons(): Promise<ComparisonResponse[]> {
   const response = await fetch(`${getBaseUrl()}/api/compare`, {
-    headers: {
+    headers: getRequestHeaders({
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
   });
 
@@ -1070,10 +1130,10 @@ export async function askDocumentQuestion(
 ): Promise<DocumentQAResponse> {
   const response = await fetch(`${getBaseUrl()}/api/documents/${encodeURIComponent(documentId)}/ask`, {
     method: "POST",
-    headers: {
+    headers: getRequestHeaders({
       "Content-Type": "application/json",
       Accept: "application/json",
-    },
+    }),
     credentials: "include",
     body: JSON.stringify({ question }),
     signal,
