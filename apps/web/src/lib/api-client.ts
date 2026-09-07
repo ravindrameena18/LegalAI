@@ -608,12 +608,10 @@ export async function getCurrentUser(): Promise<User | null> {
       cache: "no-store",
     });
 
-    if (response.status === 401 || response.status === 403) {
-      setAuthToken(null);
-      return null;
-    }
-
     if (!response.ok) {
+      if (response.status === 401 || response.status === 403 || response.status === 404) {
+        setAuthToken(null);
+      }
       return null;
     }
 

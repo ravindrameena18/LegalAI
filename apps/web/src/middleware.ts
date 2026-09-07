@@ -34,8 +34,9 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  // If user is already logged in and attempts to access login/register
-  if (isAuthRoute && sessionToken) {
+  // If user is already logged in and attempts to access login/register,
+  // but allow access to login if redirected with '?from=' due to expired/invalid session
+  if (isAuthRoute && sessionToken && !request.nextUrl.searchParams.has("from")) {
     const dashboardUrl = new URL("/dashboard", request.url);
     return NextResponse.redirect(dashboardUrl);
   }
