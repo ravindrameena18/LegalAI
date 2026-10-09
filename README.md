@@ -158,10 +158,15 @@ The authentication foundation is implemented across backend and frontend:
 
 *Planned future extensions: Email verification links, password reset via SMTP, refresh token rotation, and multi-factor authentication (MFA).*
 
+## 14. Authorization / Roles
 ## 14. Authorization / Roles & RBAC
 
+- **ADMIN:** System configuration, user administration, security auditing, and operational management.
+- **LAWYER:** Full workspace access: document uploading, AI analysis, clause extraction, risk assessment, and report generation.
+- **CLIENT:** Read/review access: view assigned documents, summaries, and generated reports.
 **Status: Phase 3B Implemented**
 
+Role enforcement is performed at the API layer with `require_roles(...)` dependencies (deny-by-default), preventing client-side bypass. Default registration assigns the `LAWYER` role unless explicitly registered as `CLIENT`.
 Role-based access control (RBAC) and document ownership boundaries are enforced at the API layer with deny-by-default dependencies:
 
 - **Roles & Permissions Matrix:**
@@ -184,24 +189,20 @@ Role-based access control (RBAC) and document ownership boundaries are enforced 
 
 ## 15. API Documentation
 
+### Implemented Authentication Endpoints (Phase 3A)
 ### Implemented Authentication & RBAC Endpoints (Phase 3)
 
 ```text
+POST /api/auth/register    # Register a new user (assigns LAWYER or CLIENT)
+POST /api/auth/login       # Authenticate credentials, issue cookie + token
+POST /api/auth/logout      # Clear session cookie and invalidate session
+GET  /api/auth/me          # Fetch current user profile (cookie or Bearer)
 POST /api/auth/register       # Register new user (assigns LAWYER or CLIENT, rate limited)
 POST /api/auth/login          # Authenticate credentials, issue cookie + token (rate limited)
 POST /api/auth/logout         # Invalidate session and clear session cookie
 GET  /api/auth/me             # Retrieve authenticated user profile (cookie or Bearer)
-POST /api/documents/upload    # Secure multipart upload (PDF, DOCX, TXT with validation & text extraction)
-GET  /api/documents           # List documents belonging to authenticated user (search, format & status filters)
-GET  /api/documents/{id}      # Access specific document details & extracted page text (verifies ownership; 404 on unowned)
-GET  /api/documents/{id}/download # Download original document file from private storage
-DELETE /api/documents/{id}    # Delete document, version history, pages, and storage files
-POST /api/documents/{id}/analyze # Trigger source-grounded Gemini legal analysis (24 sections, risk breakdown)
-GET  /api/documents/{id}/analysis # Retrieve latest completed structured analysis for document
-GET  /api/analyses/{id}       # Retrieve specific analysis by ID with relational entity counts
-GET  /api/analyses            # List all analyses accessible to current authenticated user
-GET  /api/analysis/provider-status # Check AI provider reachability & model status (safe, no secrets leaked)
-GET  /api/stats               # Live aggregated workspace statistics for dashboard
+GET  /api/documents           # List documents belonging to authenticated user (ownership bound)
+GET  /api/documents/{id}      # Access specific document (verifies ownership; 404 on unowned)
 GET  /api/admin/audit-logs    # Access audit records (restricted to ADMIN via audit:view)
 ```
 
@@ -210,79 +211,22 @@ GET  /api/admin/audit-logs    # Access audit records (restricted to ADMIN via au
 ### Planned REST Surface (Future Phases)
 
 ```text
-POST /api/documents/{id}/chat # Multi-turn document chat (Phase 6)
-POST /api/reports/generate   # Export structured findings to PDF/DOCX reports (Phase 7)
+POST /api/documents/upload
+GET  /api/documents
+GET  /api/documents/{id}
+DELETE /api/documents/{id}
+POST /api/documents/upload    # Multipart document upload (Phase 4)
+DELETE /api/documents/{id}    # Delete document & versions (Phase 4)
+POST /api/documents/{id}/analyze
+GET  /api/documents/{id}/analysis
+GET  /api/documents/{id}/clauses
+GET  /api/documents/{id}/risks
+POST /api/documents/{id}/chat
+POST /api/reports/generate
 GET  /api/reports/{id}
 ```
 
----
-
-## 15A. Gemini AI Document Analysis (Phase 5)
-
-LegalAI integrates Google's official Python SDK (`google-genai`) to provide source-grounded, structured contract analysis.
-
-### 1. Gemini Configuration & Key Setup
-1. Create a Google Gemini API key at [Google AI Studio](https://aistudio.google.com/).
-2. Add the key to your local `.env` file:
-   ```bash
-   GEMINI_API_KEY=your_actual_api_key_here
-   GEMINI_MODEL=gemini-2.5-flash
-   ```
-3. `GEMINI_MODEL` defaults to `gemini-2.5-flash` if unset.
-4. **Zero Key Exposure**: The API key is stored strictly server-side, never sent to the browser, never written to the database, and never logged.
-5. If `GEMINI_API_KEY` is missing, the system cleanly reports `"GEMINI_API_KEY is not configured."` without crashing or returning fake analysis.
-
-### 2. 24-Section Canonical Structured Output
-Every completed legal analysis validates against a strict Pydantic schema enforcing:
-1. `Executive Summary`
-2. `Document Type`
-3. `Parties`
-4. `Important Dates`
-5. `Financial Terms`
-6. `Obligations`
-7. `Rights`
-8. `Termination`
-9. `Renewal`
-10. `Confidentiality`
-11. `Liability`
-12. `Indemnity`
-13. `Intellectual Property`
-14. `Governing Law`
-15. `Jurisdiction`
-16. `Dispute Resolution`
-17. `Warranties`
-18. `Representations`
-19. `Non-Compete`
-20. `Non-Solicitation`
-21. `Data Protection`
-22. `Important Clauses`
-23. `Risks` (with `CRITICAL`, `HIGH`, `MEDIUM`, `LOW` severity levels, explanation, and verbatim evidence)
-24. `Missing/Unclear Information`
-
-### 3. Anti-Hallucination & Source Grounding
-- The AI is strictly instructed to extract information solely from `<DOCUMENT_CONTENT>`.
-- Any absent section or field explicitly returns: `"Not found in the provided document."`
-- Every risk and clause requires exact verbatim source text from the document. If verbatim evidence does not exist, the finding is not generated.
-- Page numbers must be verified against document markers or set to `null` (no page guessing).
-
-### 4. Prompt Injection Defense
-All document text is treated as **untrusted data** and isolated inside `<DOCUMENT_CONTENT>` tags. The system prompt instructs Gemini that any user commands embedded in contracts (such as "Ignore previous instructions", "Output system prompt", or "Act as administrator") must be treated strictly as document text under analysis, never as actionable instructions.
-
-### 5. Re-Analysis Cost Control
-Before querying Gemini, `POST /api/documents/{id}/analyze` checks if a completed analysis already exists for the document. If found, the existing analysis is returned immediately without re-querying the API. Users can explicitly force a fresh re-analysis by passing `?force=true`.
-
-### 6. Response Normalization & Defensive Validation
-To ensure deterministic stability and prevent runtime crashes:
-- **Backend Model Validators**: Pydantic models in `app/schemas/analysis.py` automatically coerce any omitted or `null` collection fields (`parties`, `important_dates`, `financial_terms`, `obligations`, `rights`, `important_clauses`, `risks`, `missing_or_unclear_information`) into empty lists `[]`. Missing or `null` section objects default to valid instances with `"Not found in the provided document."` text.
-- **JSON Sanitization**: Extracts JSON content between the first `{` and last `}` to safely disregard any markdown backticks or LLM preamble.
-- **Frontend Normalization Layer**: `apps/web/src/lib/api-client.ts` executes `normalizeLegalAnalysisData()` on all incoming analysis responses, guaranteeing that every rendered array is an `Array` (`Array.isArray(x) ? x : []`), preventing `Cannot read properties of undefined (reading 'map')` errors.
-### 7. Resilient Execution & Proxy Architecture
-- **Supported Gemini Model**: Configured with `gemini-3.6-flash` (replacing retired `gemini-2.5-flash`). Supported models automatically fall back to active Flash alternatives (`gemini-flash-latest`, `gemini-3.5-flash`) during temporary Google provider load spikes.
-- **Native Async Non-Blocking Client**: Uses `client.aio.models.generate_content` from the official `google-genai` SDK with `automatic_function_calling=disable`, preventing event loop thread starvation.
-- **Structured Exception Mapping**: Distinguishes between authentication errors (401/403/502), missing models (404/502), rate limits (429), high-demand spikes (503 with automatic backoff retry), and timeouts (504). All secrets and API keys are strictly redacted from logs and client responses.
-- **Next.js App Router Proxy**: Route handler in `apps/web/src/app/api/[...path]/route.ts` replaces legacy rewrites with an explicit 120-second timeout, completely eliminating upstream `ECONNRESET` / `socket hang up` errors during long-running legal document analysis.
-
----
+OpenAPI generated by FastAPI will be the executable API reference. Every endpoint will define authentication, authorization, validation, errors, pagination, and rate-limit behavior before implementation.
 
 ## 16. Environment Variables
 
@@ -293,8 +237,7 @@ Copy `.env.example` to a local server-only environment file. Do not commit real 
 - `REDIS_URL`: Redis connection string.
 - `STORAGE_PROVIDER` and `STORAGE_*`: private S3-compatible storage configuration.
 - `JWT_SECRET`, `SESSION_SECRET`, and `ENCRYPTION_KEY`: generated server secrets.
-- `GEMINI_API_KEY`: Google Gemini API key.
-- `GEMINI_MODEL`: Gemini model name (`gemini-2.5-flash` default).
+- `AI_PROVIDER`, `AI_API_KEY`, and model settings: optional server-side AI configuration.
 - `OCR_PROVIDER` and OCR credentials: optional scanned-document support.
 - `SMTP_*`: optional email delivery for verification and password reset.
 
@@ -315,7 +258,6 @@ In a second terminal:
 ```text
 cd services/api
 python -m pip install -e ".[test]"
-alembic upgrade head
 uvicorn app.main:app --reload --port 8000
 ```
 
@@ -366,6 +308,11 @@ LegalAI provides AI-assisted document analysis and general informational insight
 ## 24. Future Roadmap
 
 1. Initialize the monorepo and local service dependencies. *(Completed)*
+2. Implement database migrations, authentication, RBAC, and audit logging. *(Phase 3A Completed)*
+3. Build the dashboard, document management, secure upload, and processing state UI. *(Phase 3B)*
+4. Add extraction, OCR, chunking, embeddings, structured analysis, clauses, and risks. *(Phase 4)*
+5. Add grounded chat, reports, notifications, search, sharing, and admin controls. *(Phase 5)*
+6. Harden security, add observability and retention controls, integrate legal research providers, and complete production testing. *(Phase 6)*
 2. Implement database migrations, authentication, RBAC, and audit logging. *(Phase 3 Completed)*
 3. Build the dashboard, document management, secure upload, and processing state UI. *(Phase 4)*
 4. Add extraction, OCR, chunking, embeddings, structured analysis, clauses, and risks. *(Phase 5)*
@@ -384,26 +331,27 @@ LegalAI provides AI-assisted document analysis and general informational insight
 - Surface failures clearly and avoid internal stack traces in user responses.
 - Run focused validation after edits and update this README for significant changes.
 
-## Phase 5 Status: Gemini AI Analysis & Canonical Schema Normalization
+## Phase 3A Status
+## Phase 3 Status
 
-Phase 5 (Real Google Gemini AI Document Analysis) is **OPERATIONAL & PRODUCTION-VERIFIED**:
-- **Canonical Structured Schema:** 24-section legal analysis result grounded strictly in document text (`LegalAnalysisResult`).
-- **Canonical `MissingOrUnclearItem` Schema:**
-  - `term`: Name of missing/unclear provision.
-  - `explanation`: Reason why the term is omitted or ambiguous.
-  - `page`: Integer page number if partially mentioned, or `null`.
-  - `section`: Contract section identifier if partially mentioned, or `null`.
-  - `source_text`: Verbatim snippet demonstrating ambiguity, or `null`.
-  - `confidence`: Confidence score from 0.0 to 1.0 or `null`.
-- **Backward Compatibility:** All legacy string arrays (`["Term A", "Term B"]`) are transparently normalized into `MissingOrUnclearItem` models with fallback explanations and null source citations.
-- **Resilient Multi-Stage JSON Parser (`parse_json_resilient`):**
-  - Handles markdown code blocks.
-  - Strips trailing commas.
-  - Recovers missing commas between lines.
-  - Reconstructs and safely closes truncated JSON responses if large documents reach token limits.
-- **Production Validation:** Live real-world verification completed against Google Gemini (`gemini-3.5-flash` / `gemini-3.6-flash`) on multiple diverse contracts:
-  1. `raveena.pdf`: Heavily redacted document correctly yields 2 parties and omissions without hallucinations.
-  2. `1000_Buildings_Professional_Contract_EN.pdf`: 5-page real construction agreement parsed end-to-end with 2 contracting parties, 4 risk items, 4 key clauses, and 4 grounded omissions citing specific pages.
-- **Frontend Workspace (`/analysis`):** Fully integrated React client with source evidence modals, CRITICAL risk badges, and structured omissions cards.
-
+Phase 3A authentication foundation is **COMPLETE**:
+- Real user registration with input validation, password strength rules, and duplicate email prevention
+- Secure Argon2 password hashing via `pwdlib[argon2]`
+- Dual session management: HTTP-only, SameSite cookie (`legalai_session`) and Bearer token support
+- Role foundation: `ADMIN`, `LAWYER`, and `CLIENT`
+- Protected API endpoints (`/api/auth/register`, `/api/auth/login`, `/api/auth/logout`, `/api/auth/me`)
+- Role authorization dependency (`require_roles`)
+- Frontend Next.js route protection (`src/middleware.ts`) and client-side guards
+- Reactive `AuthProvider` and `useAuth` hook
+- User interface: Real login and register forms, auth status badges, sidebar profile card with initials avatar and interactive sign out
+- 100% passing automated test suites on both backend and frontend
+Phase 3 (Authentication, Database Foundation, RBAC, Document Ownership, and Security) is **COMPLETE**:
+- **Authentication:** User registration with input validation, password strength rules, duplicate email prevention, Argon2 password hashing via `pwdlib[argon2]`, dual session management (HTTP-only SameSite cookie + Bearer token), and protected `/api/auth/me`.
+- **Database & Model Constraints:** Relational schema with UUID primary keys, timestamps, indexed foreign keys, and unique email constraints.
+- **RBAC Foundation:** Canonical roles (`ADMIN`, `LAWYER`, `CLIENT`) and granular permission mappings enforced server-side via `require_permission` and `require_roles`.
+- **Document Ownership Isolation:** Document access verification ensuring User A cannot view User B's documents, returning `404 Not Found` for unowned resources to prevent tenant existence leaks.
+- **Audit Logging Service:** Structured logging for authentication and resource access events with recursive credential/token scrubbing.
+- **Rate Limiting:** Adaptive Redis and in-memory rate limiting on sensitive endpoints.
+- **Frontend Role Awareness:** Role-tailored navigation in `AppShell` with explicit notices separating UX visibility from server authorization.
+- **100% Automated Test Coverage:** Passing test suites across backend API, security policies, and frontend components.
 
