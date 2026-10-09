@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { useAuth } from "@/lib/auth-context";
+import { ApiError } from "@/lib/api-client";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { register, isLoading, error: authError, clearError } = useAuth();
+  const { user, isAuthenticated, register, isLoading, error: authError, clearError } = useAuth();
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -25,6 +26,16 @@ export default function RegisterPage() {
   const hasNumber = /\d/.test(password);
   const hasSpecial = /[!@#$%^&*(),.?":{}|<>_\-+=\[\]\\/]/.test(password);
   const passwordsMatch = password.length > 0 && password === confirmPassword;
+
+  // If already authenticated, redirect to dashboard
+  useEffect(() => {
+    if (!isLoading && (user || isAuthenticated)) {
+      router.push("/dashboard");
+      if (typeof router.refresh === "function") {
+        router.refresh();
+      }
+    }
+  }, [user, isAuthenticated, isLoading, router]);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -66,11 +77,17 @@ export default function RegisterPage() {
         confirmPassword,
       });
       router.push("/dashboard");
+      if (typeof router.refresh === "function") {
+        router.refresh();
+      }
     } catch (err: unknown) {
       const errMessage =
-        err instanceof Error ? err.message : "Failed to register. Please check your details.";
+        err instanceof ApiError
+          ? err.detail
+          : err instanceof Error
+            ? err.message
+            : "Failed to register. Please check your details.";
       setFormError(errMessage);
-    } finally {
       setIsSubmitting(false);
     }
   };

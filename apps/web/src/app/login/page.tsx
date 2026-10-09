@@ -1,28 +1,47 @@
 "use client";
 
-import { Suspense, useState, type FormEvent } from "react";
+import { Suspense, useEffect, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { useAuth } from "@/lib/auth-context";
+import { ApiError } from "@/lib/api-client";
 
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const from = searchParams.get("from") || "/dashboard";
+  const fromParam = searchParams.get("from");
+  const from =
+    fromParam &&
+    fromParam.startsWith("/") &&
+    !fromParam.startsWith("/login") &&
+    !fromParam.startsWith("/register")
+      ? fromParam
+      : "/dashboard";
 
-  const { login, isLoading, error: authError, clearError } = useAuth();
+  const { user, isAuthenticated, login, isLoading, error: authError, clearError } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [formError, setFormError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // If already authenticated, immediately navigate to target
+  useEffect(() => {
+    if (!isLoading && (user || isAuthenticated)) {
+      router.push(from);
+      if (typeof router.refresh === "function") {
+        router.refresh();
+      }
+    }
+  }, [user, isAuthenticated, isLoading, from, router]);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     clearError();
     setFormError(null);
 
-    if (!email.trim()) {
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail) {
       setFormError("Email address is required.");
       return;
     }
@@ -34,13 +53,19 @@ function LoginForm() {
 
     try {
       setIsSubmitting(true);
-      await login({ email: email.trim(), password });
+      await login({ email: trimmedEmail, password });
       router.push(from);
+      if (typeof router.refresh === "function") {
+        router.refresh();
+      }
     } catch (err: unknown) {
       const errMessage =
-        err instanceof Error ? err.message : "Failed to sign in. Please verify your credentials.";
+        err instanceof ApiError
+          ? err.detail
+          : err instanceof Error
+            ? err.message
+            : "Failed to sign in. Please verify your credentials.";
       setFormError(errMessage);
-    } finally {
       setIsSubmitting(false);
     }
   };

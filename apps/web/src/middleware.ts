@@ -31,17 +31,31 @@ export function middleware(request: NextRequest) {
     if (pathname !== "/" && pathname !== "/dashboard") {
       loginUrl.searchParams.set("from", pathname);
     }
-    return NextResponse.redirect(loginUrl);
+    const response = NextResponse.redirect(loginUrl);
+    response.headers.set("x-middleware-cache", "no-cache");
+    return response;
   }
 
   // If user is already logged in and attempts to access login/register,
-  // but allow access to login if redirected with '?from=' due to expired/invalid session
-  if (isAuthRoute && sessionToken && !request.nextUrl.searchParams.has("from")) {
-    const dashboardUrl = new URL("/dashboard", request.url);
-    return NextResponse.redirect(dashboardUrl);
+  // redirect them to the destination in 'from' or to /dashboard
+  if (isAuthRoute && sessionToken) {
+    const fromParam = request.nextUrl.searchParams.get("from");
+    const targetPath =
+      fromParam &&
+      fromParam.startsWith("/") &&
+      !fromParam.startsWith("/login") &&
+      !fromParam.startsWith("/register")
+        ? fromParam
+        : "/dashboard";
+    const dashboardUrl = new URL(targetPath, request.url);
+    const response = NextResponse.redirect(dashboardUrl);
+    response.headers.set("x-middleware-cache", "no-cache");
+    return response;
   }
 
-  return NextResponse.next();
+  const response = NextResponse.next();
+  response.headers.set("x-middleware-cache", "no-cache");
+  return response;
 }
 
 export const config = {
@@ -56,4 +70,3 @@ export const config = {
     "/((?!api|_next/static|_next/image|favicon.ico|.*\\..*).*)",
   ],
 };
-

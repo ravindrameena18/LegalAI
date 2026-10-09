@@ -5,6 +5,7 @@ import React, {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -37,38 +38,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const authSessionRef = useRef<number>(0);
 
   const clearError = useCallback(() => {
     setError(null);
   }, []);
 
   const refresh = useCallback(async () => {
+    const currentSession = ++authSessionRef.current;
     try {
       setIsLoading(true);
       const currentUser = await getCurrentUser();
-      setUser(currentUser);
+      if (currentSession === authSessionRef.current) {
+        setUser(currentUser);
+      }
     } catch {
-      setUser(null);
+      if (currentSession === authSessionRef.current) {
+        setUser(null);
+      }
     } finally {
-      setIsLoading(false);
+      if (currentSession === authSessionRef.current) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     let isMounted = true;
+    const currentSession = authSessionRef.current;
     getCurrentUser()
       .then((currentUser) => {
-        if (isMounted) {
+        if (isMounted && currentSession === authSessionRef.current) {
           setUser(currentUser);
         }
       })
       .catch(() => {
-        if (isMounted) {
+        if (isMounted && currentSession === authSessionRef.current) {
           setUser(null);
         }
       })
       .finally(() => {
-        if (isMounted) {
+        if (isMounted && currentSession === authSessionRef.current) {
           setIsLoading(false);
         }
       });
@@ -79,36 +89,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (payload: LoginPayload) => {
+    const currentSession = ++authSessionRef.current;
     setError(null);
     try {
       setIsLoading(true);
       const res = await loginUser(payload);
-      setUser(res.user);
+      if (currentSession === authSessionRef.current) {
+        setUser(res.user);
+      }
     } catch (err: unknown) {
       const message = err instanceof ApiError ? err.detail : "Login failed. Please check your credentials.";
       setError(message);
       throw err;
     } finally {
-      setIsLoading(false);
+      if (currentSession === authSessionRef.current) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
   const register = useCallback(async (payload: RegisterPayload) => {
+    const currentSession = ++authSessionRef.current;
     setError(null);
     try {
       setIsLoading(true);
       const res = await registerUser(payload);
-      setUser(res.user);
+      if (currentSession === authSessionRef.current) {
+        setUser(res.user);
+      }
     } catch (err: unknown) {
       const message = err instanceof ApiError ? err.detail : "Registration failed. Please verify your information.";
       setError(message);
       throw err;
     } finally {
-      setIsLoading(false);
+      if (currentSession === authSessionRef.current) {
+        setIsLoading(false);
+      }
     }
   }, []);
 
   const logout = useCallback(async () => {
+    ++authSessionRef.current;
     try {
       setIsLoading(true);
       await logoutUser();
